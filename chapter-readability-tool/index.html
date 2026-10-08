@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter Readability Checker</title>
+<meta name="description" content="Paste a chapter. See its reading ease, grade level, and the five sentences readers will struggle with most.">
+<style>
+:root{--bg:#f6f7f4;--ink:#1d2421;--mute:#5d6862;--line:#d9ddd6;--card:#fff;--accent:#1f5f4a;--hl:#ffe08a;--hlink:#3a2f00}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14181a;--ink:#e8ece9;--mute:#9aa6a0;--line:#2b3336;--card:#1b2124;--accent:#6fcfa6;--hl:#5c4a10;--hlink:#fff3c4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Georgia,"Times New Roman",serif}
+main{max-width:860px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:2rem;line-height:1.2;margin:0 0 6px}
+.sub{color:var(--mute);margin:0 0 24px;font-family:system-ui,sans-serif}
+textarea{width:100%;min-height:220px;padding:14px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font:inherit;resize:vertical}
+textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 28px;font-family:system-ui,sans-serif}
+button{padding:10px 18px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--bg);font:600 .95rem system-ui,sans-serif;cursor:pointer}
+button.alt{background:transparent;color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:28px;font-family:system-ui,sans-serif}
+.stat{border:1px solid var(--line);background:var(--card);padding:12px 14px;border-radius:6px}
+.stat b{display:block;font-size:1.6rem;font-family:Georgia,serif}
+.stat span{color:var(--mute);font-size:.85rem}
+h2{font-size:1.2rem;margin:28px 0 10px}
+ol{padding-left:1.3rem}
+li{margin-bottom:12px}
+.meta{display:block;color:var(--mute);font:.82rem system-ui,sans-serif}
+#view{white-space:pre-wrap;border:1px solid var(--line);background:var(--card);padding:18px;border-radius:6px;max-width:72ch}
+mark{background:var(--hl);color:var(--hlink);padding:1px 2px;border-radius:2px}
+mark sup{font:700 .7rem system-ui,sans-serif;margin-right:3px}
+.err{color:#b3261e;font-family:system-ui,sans-serif}
+footer{margin-top:40px;color:var(--mute);font:.85rem system-ui,sans-serif}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Chapter readability checker</h1>
+<p class="sub">Paste a chapter. Get its reading level and the five sentences readers are most likely to struggle with. Your text never leaves this page.</p>
+
+<textarea id="in" aria-label="Chapter text" placeholder="Paste your chapter here (at least 50 words)…"></textarea>
+<div class="row">
+  <button id="go">Check readability</button>
+  <button id="sample" class="alt">Try a sample</button>
+  <button id="clear" class="alt">Clear</button>
+</div>
+<p id="err" class="err" role="alert" hidden></p>
+
+<section id="out" hidden>
+  <div class="stats" id="stats"></div>
+  <h2>Five hardest sentences</h2>
+  <ol id="hard"></ol>
+  <h2>Your chapter, with those sentences highlighted</h2>
+  <div id="view"></div>
+  <div class="row" style="margin-top:16px"><button id="copy" class="alt">Copy results summary</button></div>
+</section>
+
+<footer>Scores use the Flesch formulas with a rule-based syllable counter. Names, abbreviations and unusual words can be miscounted, so treat results as a guide, not a verdict.</footer>
+</main>
+
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+var lastSummary="";
+
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+
+function words(s){return s.match(/[A-Za-z]+(?:['\u2019][A-Za-z]+)*/g)||[]}
+
+var EXC={the:1,he:1,she:1,we:1,me:1,be:1,area:3,idea:3,being:2,lion:2,quiet:2,poem:2,science:2,create:2,created:3,business:2,every:2,different:3,evening:2,beautiful:3,fire:1,hour:1,our:1,people:2,really:3,usually:4,video:3,radio:3,violet:3,diet:2,riot:2,real:1,year:1,eye:1,eyes:1,once:1,one:1,someone:2,anyone:2,everyone:3,aren:1,isn:1,wasn:1,doesn:2,didn:2,couldn:2,wouldn:2,shouldn:2};
+
+function syl(raw){
+  var w=raw.toLowerCase().replace(/['\u2019]/g,"").replace(/[^a-z]/g,"");
+  if(!w)return 0;
+  if(EXC[w]!==undefined)return EXC[w];
+  if(w.length<=3)return 1;
+  var base=w;
+  w=w.replace(/(?:[^laeiouy]es|[^laeiouy]ed|[^laeiouy]e)$/,"");
+  w=w.replace(/^y/,"");
+  var m=w.match(/[aeiouy]{1,2}/g);
+  var n=m?m.length:1;
+  if(/[^aeiouy]le$/.test(base)&&n===m.length&&!/le$/.test(w))n+=0;
+  if(/(?:ia|io|eo|ua|uo)[a-z]?$/.test(base)&&/(?:ia|io)n?$/.test(base)===false)n+=0;
+  if(/(?:tion|sion|cian)s?$/.test(base))n=Math.max(1,n); 
+  return Math.max(1,n);
+}
+
+function splitSentences(text){
+  // Protect abbreviations & decimals (same length so offsets stay valid)
+  var p=text.replace(/\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|Mt|No)\./g,function(m){return m.slice(0,-1)+"\u0001"})
+            .replace(/(\d)\.(\d)/g,"$1\u0001$2");
+  var re=/[^.!?\n]+(?:[.!?]+["'\u201d\u2019)\]]*|(?=\n)|$)/g,m,out=[];
+  while((m=re.exec(p))!==null){
+    if(m[0].length===0){re.lastIndex++;continue}
+    var seg=text.slice(m.index,m.index+m[0].length);
+    if(/[A-Za-z]/.test(seg))out.push({start:m.index,end:m.index+m[0].length,text:seg});
+  }
+  return out;
+}
+
+function analyze(text){
+  var sents=splitSentences(text),W=0,S=0,Y=0;
+  sents.forEach(function(s){
+    var ws=words(s.text);
+    s.w=ws.length;
+    s.y=ws.reduce(function(a,x){return a+syl(x)},0);
+    s.grade=s.w?0.39*s.w+11.8*(s.y/s.w)-15.59:0;
+    W+=s.w;Y+=s.y;
+  });
+  sents=sents.filter(function(s){return s.w>0});
+  S=sents.length;
+  var fre=206.835-1.015*(W/S)-84.6*(Y/W);
+  var fk=0.39*(W/S)+11.8*(Y/W)-15.59;
+  var hard=sents.filter(function(s){return s.w>=6})
+    .slice().sort(function(a,b){return b.grade-a.grade}).slice(0,5);
+  return {W:W,S:S,Y:Y,fre:fre,fk:fk,sents:sents,hard:hard};
+}
+
+function band(f){
+  if(f>=90)return"Very easy";if(f>=80)return"Easy";if(f>=70)return"Fairly easy";
+  if(f>=60)return"Plain English";if(f>=50)return"Fairly difficult";
+  if(f>=30)return"Difficult";return"Very difficult";
+}
+
+function render(text,r){
+  var rank={};
+  r.hard.forEach(function(s,i){rank[s.start]=i+1});
+  $("stats").innerHTML=[
+    [r.fre.toFixed(1),"Flesch Reading Ease ("+band(r.fre)+")"],
+    [Math.max(0,r.fk).toFixed(1),"Flesch-Kincaid grade level"],
+    [r.W.toLocaleString(),"Words"],
+    [r.S.toLocaleString(),"Sentences"],
+    [(r.W/r.S).toFixed(1),"Words per sentence"]
+  ].map(function(x){return '<div class="stat"><b>'+x[0]+'</b><span>'+x[1]+'</span></div>'}).join("");
+
+  $("hard").innerHTML=r.hard.map(function(s){
+    return "<li>"+esc(s.text.trim())+'<span class="meta">'+s.w+" words · grade "+Math.max(0,s.grade).toFixed(1)+"</span></li>";
+  }).join("");
+
+  var html="",pos=0;
+  r.sents.forEach(function(s){
+    html+=esc(text.slice(pos,s.start));
+    var t=esc(text.slice(s.start,s.end));
+    html+=rank[s.start]?'<mark><sup>'+rank[s.start]+"</sup>"+t+"</mark>":t;
+    pos=s.end;
+  });
+  html+=esc(text.slice(pos));
+  $("view").innerHTML=html;
+
+  lastSummary="Chapter readability: Reading Ease "+r.fre.toFixed(1)+" ("+band(r.fre)+"), grade level "+Math.max(0,r.fk).toFixed(1)+", "+r.W+" words, "+r.S+" sentences.\nHardest sentences:\n"+
+    r.hard.map(function(s,i){return (i+1)+". "+s.text.trim()}).join("\n");
+  $("out").hidden=false;
+}
+
+$("go").onclick=function(){
+  var text=$("in").value, err=$("err");
+  err.hidden=true;
+  if(words(text).length<50){
+    err.textContent="Paste at least 50 words so the score is meaningful.";
+    err.hidden=false;$("out").hidden=true;return;
+  }
+  render(text,analyze(text));
+  $("out").scrollIntoView({behavior:"smooth"});
+};
+$("clear").onclick=function(){$("in").value="";$("out").hidden=true;$("err").hidden=true};
+$("copy").onclick=function(){
+  var b=$("copy");
+  (navigator.clipboard?navigator.clipboard.writeText(lastSummary):Promise.reject()).then(function(){b.textContent="Copied"},function(){b.textContent="Copy failed"});
+  setTimeout(function(){b.textContent="Copy results summary"},1800);
+};
+$("sample").onclick=function(){
+  $("in").value="It was a bright cold day in April, and the clocks were striking thirteen. Winston Smith, his chin nuzzled into his breast in an effort to escape the vile wind, slipped quickly through the glass doors of Victory Mansions, though not quickly enough to prevent a swirl of gritty dust from entering along with him. The hallway smelt of boiled cabbage and old rag mats. At one end of it a coloured poster, too large for indoor display, had been tacked to the wall. It depicted simply an enormous face, more than a metre wide: the face of a man of about forty-five, with a heavy black moustache and ruggedly handsome features. Winston made for the stairs. It was no use trying the lift. Even at the best of times it was seldom working, and at present the electric current was cut off during daylight hours.";
+  $("go").click();
+};
+})();
+</script>
+</body>
+</html>
